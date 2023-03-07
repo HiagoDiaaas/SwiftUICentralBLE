@@ -11,7 +11,7 @@ import SwiftUI
 struct SwiftUICentralBLEApp: App {
     var body: some Scene {
         WindowGroup {
-            BLECentralView()
+            BLECentralView(viewModel: BLECentralViewModel())
         }
     }
 }

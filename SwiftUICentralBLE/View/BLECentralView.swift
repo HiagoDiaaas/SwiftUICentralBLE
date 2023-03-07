@@ -8,69 +8,21 @@
 import SwiftUI
 import CoreBluetooth
 
+import SwiftUI
+
 struct BLECentralView: View {
-    
-    @StateObject var viewModel = BLECentralViewModel()
+    @ObservedObject var viewModel: BLECentralViewModel
     
     var body: some View {
-        NavigationView {
-            VStack {
-                List {
-                    ForEach(viewModel.peripherals) { peripheral in
-                        HStack {
-                            Text(peripheral.name ?? "Unknown")
-                            Spacer()
-                            if peripheral.isConnected {
-                                Button(action: {
-                                    viewModel.disconnect(from: peripheral)
-                                }, label: {
-                                    Text("Disconnect")
-                                })
-                            } else {
-                                Button(action: {
-                                    viewModel.connect(to: peripheral)
-                                }, label: {
-                                    Text("Connect")
-                                })
-                            }
-                        }
-                    }
-                }
-                HStack {
-                    Text("Peripheral Name: ")
-                    Text("\(viewModel.selectedPeripheral?.name ?? "")")
-                }
-                HStack {
-                    Text("Peripheral Status: ")
-                    Text("\(viewModel.selectedPeripheral?.isConnected ?? false ? "Connected" : "Not connected")")
-                }
-                HStack {
-                    Text("Characteristic Value: ")
-                    Text("\(viewModel.selectedCharacteristic?.value ?? "")")
-                }
-                TextField("Write data to characteristic", text: $viewModel.writeData)
-                    .padding(.horizontal)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                HStack {
-                    Button(action: {
-                        viewModel.startScanning()
-                    }, label: {
-                        Text("Scan")
-                    })
-                    Button(action: {
-                        viewModel.readValue(from: viewModel.selectedCharacteristic!)
-                    }, label: {
-                        Text("Read")
-                    })
-                    Button(action: {
-                        viewModel.writeValue(to: viewModel.selectedCharacteristic!)
-                    }, label: {
-                        Text("Write")
-                    })
-                }
-                
-                .navigationBarTitle("Bluetooth Central")
-            }
-        }
+        VStack {
+            Text("Bluetooth central device").font(.title)
+            TextField("Enter text here", text: $viewModel.textFieldValue).padding()
+            Button("Read", action: viewModel.readValue).padding()
+            Button("Write", action: { viewModel.writeValue(viewModel.textFieldValue) }).padding()
+            Spacer()
+        }.padding()
+        .onAppear(perform: viewModel.startScanning)
+        .onDisappear(perform: viewModel.stopScanning)
     }
 }
+

@@ -9,18 +9,14 @@ import SwiftUI
 import CoreBluetooth
 
 class BLECentralViewModel: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
-    
-    let SERVICE_UUID = CBUUID(string: "CDD1")
-    let CHARACTERISTIC_UUID = CBUUID(string: "CDD2")
-    
-    @Published var peripherals: [BLEPeripheral] = []
-    @Published var selectedPeripheral: BLEPeripheral? = nil
-    @Published var selectedCharacteristic: BLECharacteristic? = nil
-    
-    @Published var characteristicValue: String = ""
-    @Published var writeData: String = ""
-    
+    private let SERVICE_UUID = CBUUID(string: "CDD1")
+    private let CHARACTERISTIC_UUID = CBUUID(string: "CDD2")
     private var centralManager: CBCentralManager!
+    private var peripheral: CBPeripheral!
+    private var characteristic: CBCharacteristic!
+    
+    @Published var textFieldValue: String = ""
+    @Published var isScanning: Bool = false
     
     override init() {
         super.init()
@@ -28,109 +24,86 @@ class BLECentralViewModel: NSObject, ObservableObject, CBCentralManagerDelegate,
     }
     
     func startScanning() {
+        isScanning = true
         centralManager.scanForPeripherals(withServices: [SERVICE_UUID], options: nil)
     }
     
-    func connect(to peripheral: BLEPeripheral) {
-        selectedPeripheral = peripheral
-        selectedPeripheral?.isConnected = true
-        selectedPeripheral?.peripheral.delegate = self
-        centralManager.connect(peripheral.peripheral, options: nil)
-    }
-
-    func disconnect(from peripheral: BLEPeripheral) {
-        selectedPeripheral = peripheral
-        selectedPeripheral?.isConnected = false
-        centralManager.cancelPeripheralConnection(peripheral.peripheral)
-    }
-
-    
-    func readValue(from characteristic: BLECharacteristic) {
-        selectedCharacteristic = characteristic
-        selectedPeripheral?.peripheral.readValue(for: characteristic.characteristic)
+    func stopScanning() {
+        isScanning = false
+        centralManager.stopScan()
     }
     
-    func writeValue(to characteristic: BLECharacteristic) {
-        let data = self.writeData.data(using: .utf8)!
-        selectedPeripheral?.peripheral.writeValue(data, for: characteristic.characteristic, type: .withResponse)
+    func readValue() {
+        if let characteristic = characteristic {
+            peripheral.readValue(for: characteristic)
+        }
+    }
+    
+    func writeValue(_ value: String) {
+        guard let characteristic = characteristic, let data = value.data(using: .utf8) else { return }
+        peripheral.writeValue(data, for: characteristic, type: .withResponse)
     }
     
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         if central.state == .poweredOn {
-            print("Bluetooth available")
-        } else if central.state == .unsupported {
-            print("This device does not support Bluetooth")
-        } else if central.state == .poweredOff {
-            print("Bluetooth is off")
+            startScanning()
+        } else {
+            stopScanning()
         }
     }
     
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
-        let existingPeripheral = peripherals.first { $0.peripheral.identifier == peripheral.identifier }
-        if existingPeripheral == nil {
-            let newPeripheral = BLEPeripheral(peripheral: peripheral)
-            peripherals.append(newPeripheral)
-        }
+        stopScanning()
+        peripheral.delegate = self
+        self.peripheral = peripheral
+        centralManager.connect(peripheral, options: nil)
     }
     
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        selectedPeripheral?.peripheral.discoverServices([SERVICE_UUID])
-        print("Connected to peripheral: \(peripheral.name ?? "")")
+        peripheral.discoverServices([SERVICE_UUID])
     }
     
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        print("Failed to connect to peripheral: \(peripheral.name ?? "")")
+        startScanning()
     }
     
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        print("Disconnected from peripheral: \(peripheral.name ?? "")")
+        startScanning()
     }
     
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard let services = peripheral.services else { return }
-        selectedPeripheral?.services = services
         for service in services {
-            print("Discovered service: \(service.uuid)")
             peripheral.discoverCharacteristics([CHARACTERISTIC_UUID], for: service)
         }
     }
     
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard let characteristics = service.characteristics else { return }
-        var bleCharacteristics = [BLECharacteristic]()
         for characteristic in characteristics {
-            print("Discovered characteristic: \(characteristic.uuid)")
             if characteristic.uuid == CHARACTERISTIC_UUID {
-                let bleCharacteristic = BLECharacteristic(characteristic: characteristic)
-                bleCharacteristics.append(bleCharacteristic)
-                let cbMutableCharacteristic = CBMutableCharacteristic(
-                    type: characteristic.uuid,
-                    properties: characteristic.properties,
-                    value: characteristic.value,
-                    permissions: CBAttributePermissions(rawValue: characteristic.properties.rawValue)
-                )
-                peripheral.setNotifyValue(true, for: cbMutableCharacteristic)
+                self.characteristic = characteristic
+                peripheral.readValue(for: characteristic)
+                peripheral.setNotifyValue(true, for: characteristic)
             }
         }
-        let cbMutableService = CBMutableService(
-            type: service.uuid,
-            primary: service.isPrimary
-        )
-        cbMutableService.characteristics = bleCharacteristics.map { $0.characteristic }
-        if let serviceIndex = selectedPeripheral?.services.firstIndex(where: { $0.uuid == service.uuid }) {
-            selectedPeripheral?.services[serviceIndex] = cbMutableService
-            selectedPeripheral?.peripheral.discoverDescriptors(for: (cbMutableService.characteristics?.first!)!)
+    }
+    
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard characteristic.uuid == CHARACTERISTIC_UUID, let data = characteristic.value else { return }
+        DispatchQueue.main.async {
+            self.textFieldValue = String(data: data, encoding: .utf8) ?? ""
         }
     }
-
-
-
-
-
-
-}
-
-           
+    
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        if error == nil {
+            readValue()
+        }
+    }
+    
+    
+    }
 
 
 
